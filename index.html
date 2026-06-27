@@ -508,11 +508,17 @@
                 wrapper.style.height = 'auto';
 
                 const parentW = wrapper.parentElement.clientWidth - 16;
-                if (parentW <= 0) return; // ป้องกันการประมวลผลช่วงสลับหน้าหรือช่วงหน้าจอพับอยู่
+                const parentH = wrapper.parentElement.clientHeight - 16;
+                if (parentW <= 0 || parentH <= 0) return; // ป้องกันการประมวลผลช่วงสลับหน้าหรือช่วงหน้าจอพับอยู่
                 
                 const kbW = 950; 
-                const scale = Math.min(1, parentW / kbW);
                 const kbH = kb.offsetHeight || 330;
+
+                const scaleW = parentW / kbW;
+                const scaleH = parentH / kbH;
+                
+                // หาอัตราสเกลที่เล็กที่สุดเพื่อให้คีย์บอร์ดฟิตและมองเห็นครบ 100% ทั้งด้านกว้างและด้านสูง
+                const scale = Math.min(1, scaleW, scaleH);
 
                 // ทำการสเกลและปรับค่าความสูงครอบตำแหน่งอย่างพอดี 100%
                 kb.style.transform = `scale(${scale})`;
