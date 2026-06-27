@@ -255,9 +255,9 @@
             <div class="glass-card flex-1 rounded-3xl shadow-soft relative flex flex-col items-center justify-center p-3 w-full overflow-hidden min-h-[220px]">
                 <div id="feedback-overlay" class="fixed inset-0 flex items-center justify-center text-6xl opacity-0 pointer-events-none transition-opacity duration-300 z-10 bg-white/50 dark:bg-slate-900/50 rounded-3xl">✅</div>
                 
-                <!-- The Keyboard Scaled Container -->
-                <div class="w-full overflow-x-auto custom-scrollbar pb-1 pt-1 flex justify-center items-center">
-                    <div id="virtual-keyboard" class="kb-container" style="min-width: 900px; transform-origin: center center;">
+                <!-- The Keyboard Scaled Container (แก้ไขการหดตัวแบบเต็มหน้าจอ) -->
+                <div id="keyboard-scale-wrapper" class="w-full overflow-hidden pb-1 pt-1 flex justify-center items-start">
+                    <div id="virtual-keyboard" class="kb-container">
                         <!-- Injected via JS -->
                     </div>
                 </div>
@@ -268,7 +268,7 @@
 
         <!-- 5. Dashboard / Leaderboard Screen -->
         <div id="screen-dash" class="hidden flex flex-col items-center justify-start h-full pt-8 px-4 w-full overflow-y-auto pb-10 custom-scrollbar">
-            <h2 class="text-3xl font-bold text-yellow-500 mb-4" id="dash-title">🏆 สรุปคะแนนการเรียนรู้</h2>
+            <h2 class="text-3xl font-bold text-yellow-500 mb-4" id="dash-title">🏆 สถิติของฉัน</h2>
             <div class="glass-card w-full max-w-md p-6 rounded-3xl shadow-soft text-gray-800 dark:text-white mb-4">
                 <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
                     <span class="font-bold text-lg">คะแนนฝึกทักษะรวม</span>
@@ -465,8 +465,10 @@
                 stats.load();
                 
                 kbRender.render();
-                window.addEventListener('resize', this.scaleKeyboard);
-                setTimeout(() => this.scaleKeyboard(), 150);
+                
+                // แก้ปัญหาขอบตัดและการย่อขยายแบบ Responsive
+                window.addEventListener('resize', () => system.scaleKeyboard());
+                setTimeout(() => system.scaleKeyboard(), 150);
 
                 // Global Keydown Listener
                 document.addEventListener('keydown', (e) => {
@@ -497,18 +499,25 @@
             },
             scaleKeyboard() {
                 const kb = document.getElementById('virtual-keyboard');
-                if (!kb) return;
-                const parentW = kb.parentElement.clientWidth;
-                if (parentW <= 0) return; // Prevent scaling when hidden/collapsed
+                const wrapper = document.getElementById('keyboard-scale-wrapper');
+                if (!kb || !wrapper) return;
+
+                // รีเซ็ตการตั้งค่าชั่วคราวเพื่อวัดขนาดความสูงจริงแบบเรียลไทม์
+                kb.style.transform = 'none';
+                kb.style.width = '950px';
+                wrapper.style.height = 'auto';
+
+                const parentW = wrapper.parentElement.clientWidth - 16;
+                if (parentW <= 0) return; // ป้องกันการประมวลผลช่วงสลับหน้าหรือช่วงหน้าจอพับอยู่
+                
                 const kbW = 950; 
-                if (parentW < kbW) {
-                    const scale = Math.max(0.2, (parentW - 16) / kbW); // Prevent negative or ultra-tiny scales
-                    kb.style.transform = `scale(${scale})`;
-                    kb.style.marginBottom = `-${(1 - scale) * kb.clientHeight}px`;
-                } else {
-                    kb.style.transform = 'scale(1)';
-                    kb.style.marginBottom = '0';
-                }
+                const scale = Math.min(1, parentW / kbW);
+                const kbH = kb.offsetHeight || 330;
+
+                // ทำการสเกลและปรับค่าความสูงครอบตำแหน่งอย่างพอดี 100%
+                kb.style.transform = `scale(${scale})`;
+                kb.style.transformOrigin = 'top center';
+                wrapper.style.height = `${kbH * scale}px`;
             },
             toggleTheme(forceDark = false) {
                 this.isDarkMode = forceDark ? true : !this.isDarkMode;
@@ -909,7 +918,7 @@
                 this.currentScreen = id;
                 if (id === 'screen-dash') stats.renderDash();
                 
-                // Recalculate scaling after screen is shown (so clientWidth is correctly resolved)
+                // คำนวณขยายแป้นพิมพ์ทันทีหลังเปลี่ยนหน้าจอเสร็จสิ้น เพื่อไม่ให้สเกลเพี้ยนเป็น 0
                 if (id === 'screen-game') {
                     setTimeout(() => system.scaleKeyboard(), 100);
                 }
