@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>⌨️ เกมรู้จักแป้นพิมพ์ - Keyboard Adventure</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;800&family=Nunito:wght@700&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { 
+                        sans: ['Kanit', 'sans-serif'],
+                        mono: ['Nunito', 'monospace'] 
+                    },
+                    colors: {
+                        pastel: { blue: '#bae6fd', pink: '#fbcfe8', yellow: '#fef08a', mint: '#a7f3d0', dark: '#1e293b' }
+                    },
+                    boxShadow: { 'soft': '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js & MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+        body {
+            font-family: 'Kanit', sans-serif;
+            overflow-x: hidden; overflow-y: hidden;
+            touch-action: none;
+            background: linear-gradient(135deg, #e0f2fe, #fce7f3);
+            transition: background 0.5s;
+            height: 100vh; width: 100vw; box-sizing: border-box;
+        }
+        body.dark { background: linear-gradient(135deg, #0f172a, #1e1b4b); color: white; }
+
+        /* Animations */
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        @keyframes pop { 0% { transform: scale(0.8); opacity: 0; } 50% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+        @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.5); } 50% { box-shadow: 0 0 0 10px rgba(236, 72, 153, 0); } }
+
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        .animate-shake { animation: shake 0.4s; }
+
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 2px solid rgba(255, 255, 255, 0.5); }
+        .dark .glass-card { background: rgba(30, 41, 59, 0.9); border-color: rgba(255, 255, 255, 0.1); }
+        .btn { transition: all 0.15s; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+        .btn:active { transform: scale(0.92); }
+
+        /* 6 Color Zones corresponding to the sheet image_c9bada.jpg */
+        .zone-alpha { background-color: #fbcfe8; border-bottom: 4px solid #f472b6; color: #1e293b; } /* Pink - แป้นตัวอักษร */
+        .zone-ctrl { background-color: #bbf7d0; border-bottom: 4px solid #4ade80; color: #1e293b; }  /* Green - แป้นควบคุม */
+        .zone-fn { background-color: #fef08a; border-bottom: 4px solid #facc15; color: #1e293b; }    /* Yellow - แป้นฟังก์ชัน */
+        .zone-nav { background-color: #a5f3fc; border-bottom: 4px solid #22d3ee; color: #1e293b; }   /* Cyan - แป้นจัดการควบคุมเอกสาร */
+        .zone-num { background-color: #fed7aa; border-bottom: 4px solid #fb923c; color: #1e293b; }   /* Orange - แป้นตัวเลข */
+        .zone-arrow { background-color: #bfdbfe; border-bottom: 4px solid #60a5fa; color: #1e293b; } /* Blue - แป้นลูกศร */
+        
+        /* Key Style */
+        .key {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border-radius: 8px; font-weight: bold; position: relative;
+            cursor: pointer; user-select: none; transition: all 0.08s;
+            height: 52px; font-size: 11px; line-height: 1.1;
+        }
+        .key:active, .key.pressed {
+            transform: translateY(3px);
+            border-bottom-width: 1px !important;
+            filter: brightness(0.9);
+        }
+        .key.target-active {
+            animation: pulse-glow 1.5s infinite;
+            border: 3.5px solid #db2777 !important;
+        }
+
+        .kb-container {
+            width: 100%; max-width: 950px;
+            display: flex; flex-direction: column; gap: 5px;
+            padding: 12px; background: #e2e8f0; border-radius: 18px;
+            box-shadow: inset 0 3px 10px rgba(0,0,0,0.15), 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .dark .kb-container { background: #334155; }
+        .kb-row { display: flex; gap: 5px; width: 100%; }
+
+        #ar-cursor {
+            position: fixed; width: 40px; height: 40px;
+            background: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,215,0,0.8) 100%);
+            border-radius: 50%; pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%); display: none;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+            transition: transform 0.1s;
+        }
+        #ar-cursor.pinched { transform: translate(-50%, -50%) scale(0.6); background: #10b981; }
+
+        .app-container { width: min(100%, 1100px); margin: 0 auto; padding: var(--safe-top) env(safe-area-inset-right) var(--safe-bottom) env(safe-area-inset-left); height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="ar-cursor"><i class="fas fa-hand-pointer absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white"></i></div>
+    <canvas id="confetti-canvas" class="fixed top-0 left-0 w-full h-full pointer-events-none z-50"></canvas>
+
+    <div class="app-container relative">
+        <!-- 1. Home Screen -->
+        <div id="screen-home" class="flex flex-col items-center justify-center h-full space-y-6 w-full px-4 animate-pop">
+            <div class="text-center relative">
+                <div class="absolute -top-12 -left-6 text-6xl animate-float" style="animation-delay: 0s;">👦🏻</div>
+                <div class="absolute -top-12 -right-6 text-6xl animate-float" style="animation-delay: 1s;">👧🏻</div>
+                <h1 class="text-4xl md:text-5xl font-extrabold text-blue-600 dark:text-blue-300 drop-shadow-md mb-2">⌨️ รู้จักแป้นพิมพ์ แดนมหัศจรรย์</h1>
+                <p class="text-lg font-semibold text-pink-500 dark:text-pink-300 bg-white/80 dark:bg-slate-800/80 px-4 py-1.5 rounded-full inline-block shadow-sm">สุ่มเรียนรู้และผจญภัยกับแป้นพิมพ์ 6 โซนสี 🎉</p>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg mt-6">
+                <button onclick="ui.showScreen('screen-modes')" class="btn bg-gradient-to-r from-blue-400 to-indigo-500 text-white p-4 rounded-3xl shadow-soft text-xl font-bold flex items-center justify-center gap-2 col-span-1 sm:col-span-2">
+                    <i class="fas fa-play-circle text-2xl"></i> เริ่มผจญภัย
+                </button>
+                <button onclick="ui.showScreen('screen-how')" class="btn bg-white dark:bg-slate-700 text-purple-500 dark:text-purple-300 p-4 rounded-3xl shadow-soft font-bold flex items-center justify-center gap-2">
+                    <i class="fas fa-book-open"></i> รู้จัก 6 โซนแป้นพิมพ์
+                </button>
+                <button onclick="ui.showScreen('screen-dash')" class="btn bg-white dark:bg-slate-700 text-yellow-500 dark:text-yellow-300 p-4 rounded-3xl shadow-soft font-bold flex items-center justify-center gap-2">
+                    <i class="fas fa-trophy"></i> คะแนน & เกียรติบัตร
+                </button>
+            </div>
+
+            <div class="flex gap-4 mt-4">
+                <button onclick="system.toggleSound()" class="btn bg-white dark:bg-slate-700 p-4 rounded-full shadow-soft text-gray-600 dark:text-gray-200 w-14 h-14 flex items-center justify-center"><i id="icon-sound" class="fas fa-volume-up text-xl"></i></button>
+                <button onclick="system.toggleTheme()" class="btn bg-white dark:bg-slate-700 p-4 rounded-full shadow-soft text-gray-600 dark:text-gray-200 w-14 h-14 flex items-center justify-center"><i id="icon-theme" class="fas fa-moon text-xl"></i></button>
+            </div>
+        </div>
+
+        <!-- 2. How to Play (6 Zones details corresponding to image_c9bada.jpg) -->
+        <div id="screen-how" class="hidden flex flex-col items-center justify-start h-full pt-8 px-4 w-full overflow-y-auto pb-8 custom-scrollbar">
+            <h2 class="text-3xl font-bold text-purple-600 dark:text-purple-300 mb-4 flex items-center gap-2"><i class="fas fa-keyboard"></i> 6 โซนแป้นพิมพ์น่ารู้ (ตามใบงาน)</h2>
+            <div class="glass-card w-full max-w-3xl p-6 rounded-3xl shadow-soft grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700 dark:text-gray-200 mb-6">
+                <!-- Zone 1 -->
+                <div class="bg-pink-100/50 dark:bg-pink-900/30 p-3 rounded-2xl border-b-4 border-pink-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-pink-300 text-pink-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">1</div>
+                    <div><h4 class="font-bold text-pink-700 dark:text-pink-300">แป้นตัวอักษร (สีชมพู)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้พิมพ์ตัวอักษรภาษาไทย ภาษาอังกฤษ ตัวเลข และสัญลักษณ์ต่างๆ</p></div>
+                </div>
+                <!-- Zone 2 -->
+                <div class="bg-green-100/50 dark:bg-green-900/30 p-3 rounded-2xl border-b-4 border-green-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-green-300 text-green-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">2</div>
+                    <div><h4 class="font-bold text-green-700 dark:text-green-300">แป้นควบคุม (สีเขียว)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้ควบคุมการทำงานของแป้นพิมพ์ เช่น Shift, Ctrl, Alt, Caps Lock</p></div>
+                </div>
+                <!-- Zone 3 -->
+                <div class="bg-yellow-100/50 dark:bg-yellow-900/30 p-3 rounded-2xl border-b-4 border-yellow-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-yellow-300 text-yellow-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">3</div>
+                    <div><h4 class="font-bold text-yellow-700 dark:text-yellow-300">แป้นฟังก์ชัน (สีเหลือง)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้เรียกคำสั่งพิเศษต่างๆ ตามแต่ละโปรแกรมที่ใช้งาน (F1 ถึง F12)</p></div>
+                </div>
+                <!-- Zone 4 -->
+                <div class="bg-cyan-100/50 dark:bg-cyan-900/30 p-3 rounded-2xl border-b-4 border-cyan-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-cyan-300 text-cyan-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">4</div>
+                    <div><h4 class="font-bold text-cyan-700 dark:text-cyan-300">แป้นควบคุมเอกสาร (สีฟ้า)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้จัดการเอกสาร เช่น Insert, Delete, Home, End, Page Up/Down</p></div>
+                </div>
+                <!-- Zone 5 -->
+                <div class="bg-orange-100/50 dark:bg-orange-900/30 p-3 rounded-2xl border-b-4 border-orange-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-orange-300 text-orange-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">5</div>
+                    <div><h4 class="font-bold text-orange-700 dark:text-orange-300">แป้นพิมพ์ตัวเลข (สีส้ม)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้พิมพ์ตัวเลขและเครื่องหมายในการคำนวณได้อย่างสะดวกรวดเร็ว</p></div>
+                </div>
+                <!-- Zone 6 -->
+                <div class="bg-blue-100/50 dark:bg-blue-900/30 p-3 rounded-2xl border-b-4 border-blue-400 flex gap-3 items-center">
+                    <div class="w-12 h-12 bg-blue-300 text-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shrink-0">6</div>
+                    <div><h4 class="font-bold text-blue-700 dark:text-blue-300">แป้นลูกศร (สีน้ำเงิน)</h4><p class="text-xs text-gray-600 dark:text-gray-300">ใช้เลื่อนตำแหน่งเคอร์เซอร์บนหน้าจอไปตามทิศทางต่างๆ</p></div>
+                </div>
+            </div>
+            <button onclick="ui.showScreen('screen-home')" class="btn bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 px-8 py-3 rounded-full font-bold shadow-soft"><i class="fas fa-arrow-left"></i> กลับหน้าหลัก</button>
+        </div>
+
+        <!-- 3. Mode Selection -->
+        <div id="screen-modes" class="hidden flex flex-col items-center justify-center h-full space-y-6 w-full px-4">
+            <h2 class="text-3xl font-bold text-blue-600 dark:text-blue-300 mb-2">เลือกโหมดผจญภัย 🚀</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg">
+                <button onclick="game.start('explore')" class="btn glass-card p-6 rounded-3xl shadow-soft text-left flex items-center gap-4 border-l-8 border-pink-400">
+                    <div class="text-4xl">🔍</div>
+                    <div><h3 class="text-xl font-bold text-gray-800 dark:text-white">เรียนรู้สำรวจ (Explore)</h3><p class="text-sm text-gray-500 dark:text-gray-400">สำรวจถามตอบหน้าที่แต่ละปุ่มอย่างชัดเจน</p></div>
+                </button>
+                <button onclick="game.start('find_key')" class="btn glass-card p-6 rounded-3xl shadow-soft text-left flex items-center gap-4 border-l-8 border-yellow-400">
+                    <div class="text-4xl">🎯</div>
+                    <div><h3 class="text-xl font-bold text-gray-800 dark:text-white">ตามหาแป้น (Find Key)</h3><p class="text-sm text-gray-500 dark:text-gray-400">ค้นหาและพิมพ์แป้นที่ระบบกำหนดให้เจอ!</p></div>
+                </button>
+                <button onclick="game.start('typing')" class="btn glass-card p-6 rounded-3xl shadow-soft text-left flex items-center gap-4 border-l-8 border-green-400">
+                    <div class="text-4xl">⏱️</div>
+                    <div><h3 class="text-xl font-bold text-gray-800 dark:text-white">นักพิมพ์จิ๋ว (Typing Challenge)</h3><p class="text-sm text-gray-500 dark:text-gray-400">ท้าทายความเร็วพิมพ์ตามแป้นให้ทันเวลา</p></div>
+                </button>
+                <button onclick="game.start('ar_hands')" class="btn glass-card p-6 rounded-3xl shadow-soft text-left flex items-center gap-4 border-l-8 border-purple-400">
+                    <div class="text-4xl">🤖</div>
+                    <div><h3 class="text-xl font-bold text-gray-800 dark:text-white">AR กล้องวิเศษ</h3><p class="text-sm text-gray-500 dark:text-gray-400">ใช้ปลายนิ้วชี้และจีบเพื่อจิ้มคีย์บอร์ดในอากาศ</p></div>
+                </button>
+            </div>
+            <button onclick="ui.showScreen('screen-home')" class="btn mt-4 text-gray-500 font-bold underline">กลับหน้าหลัก</button>
+        </div>
+
+        <!-- 4. Main Game Play Screen -->
+        <div id="screen-game" class="hidden flex flex-col h-full w-full max-w-5xl mx-auto pt-4 pb-4 px-2 justify-center">
+            <!-- Header Bar -->
+            <div class="flex justify-between items-center glass-card px-4 py-2 rounded-2xl shadow-soft mb-2 shrink-0">
+                <div class="flex flex-col">
+                    <span class="text-xs text-gray-500 dark:text-gray-400 font-bold" id="game-mode-label">โหมด</span>
+                    <span class="text-lg md:text-xl font-black text-blue-600 dark:text-blue-400" id="ui-mission-text">สำรวจแป้นพิมพ์ได้เลย!</span>
+                </div>
+                <div class="flex flex-col items-end">
+                    <div class="text-red-500 text-lg tracking-widest" id="ui-lives">❤️❤️❤️</div>
+                    <div class="text-yellow-500 font-bold text-sm" id="ui-score-time">คะแนน: 0</div>
+                </div>
+            </div>
+
+            <!-- AR Camera View -->
+            <div id="ar-container" class="hidden w-full h-24 rounded-2xl overflow-hidden mb-2 relative shadow-soft border-2 border-purple-400 shrink-0">
+                <video id="ar-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                <div class="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-xs font-bold" id="ar-status">กำลังโหลดกล้อง...</div>
+            </div>
+
+            <!-- Big Gorgeous Question / Explore Card Display -->
+            <div id="question-card-container" class="hidden w-full max-w-lg mx-auto mb-3 animate-pop shrink-0">
+                <div id="dynamic-card" class="glass-card rounded-3xl p-4 shadow-soft border-2 border-dashed border-pink-300 bg-white/95 dark:bg-slate-800/95 text-center relative overflow-hidden flex flex-col items-center">
+                    <!-- Progress Countdown Bar inside the Card -->
+                    <div id="timer-bar-container" class="absolute top-0 left-0 w-full h-2 bg-gray-100 dark:bg-slate-700 hidden">
+                        <div id="timer-progress-fill" class="h-full bg-gradient-to-r from-pink-500 to-rose-400 transition-all duration-1000" style="width: 100%;"></div>
+                    </div>
+                    
+                    <span class="text-xs font-black text-slate-400 uppercase tracking-widest" id="q-zone-title">โซนแป้นพิมพ์</span>
+                    
+                    <!-- Area for Game Question / Explore Q&A -->
+                    <div id="card-inner-content" class="w-full">
+                        <!-- Rendered Dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feedback Info Box (สำหรับ Explore Mode และคำแนะนำย่อย) -->
+            <div id="info-box" class="glass-card w-full p-2.5 mb-2 rounded-2xl text-center min-h-[50px] flex items-center justify-center transition-all duration-300 bg-white/90 dark:bg-slate-800/90 shadow-sm border border-pink-200 shrink-0">
+                <span class="text-gray-700 dark:text-gray-200 font-bold text-sm md:text-base" id="info-text">💡 คลิกเลือกปุ่มบนแป้นพิมพ์หน้าจอเพื่อสำรวจการทำงานแต่ละโซนสีได้เลย!</span>
+            </div>
+
+            <!-- Interactive Virtual Keyboard Area -->
+            <div class="glass-card flex-1 rounded-3xl shadow-soft relative flex flex-col items-center justify-center p-3 w-full overflow-hidden min-h-[220px]">
+                <div id="feedback-overlay" class="fixed inset-0 flex items-center justify-center text-6xl opacity-0 pointer-events-none transition-opacity duration-300 z-10 bg-white/50 dark:bg-slate-900/50 rounded-3xl">✅</div>
+                
+                <!-- The Keyboard Scaled Container -->
+                <div class="w-full overflow-x-auto custom-scrollbar pb-1 pt-1 flex justify-center items-center">
+                    <div id="virtual-keyboard" class="kb-container" style="min-width: 900px; transform-origin: center center;">
+                        <!-- Injected via JS -->
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="game.quit()" class="btn mt-2 shrink-0 text-center text-sm text-gray-500 dark:text-gray-400 underline pb-2">ออกจากการเล่น</button>
+        </div>
+
+        <!-- 5. Dashboard / Leaderboard Screen -->
+        <div id="screen-dash" class="hidden flex flex-col items-center justify-start h-full pt-8 px-4 w-full overflow-y-auto pb-10 custom-scrollbar">
+            <h2 class="text-3xl font-bold text-yellow-500 mb-4" id="dash-title">🏆 สรุปคะแนนการเรียนรู้</h2>
+            <div class="glass-card w-full max-w-md p-6 rounded-3xl shadow-soft text-gray-800 dark:text-white mb-4">
+                <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                    <span class="font-bold text-lg">คะแนนฝึกทักษะรวม</span>
+                    <span class="text-3xl font-black text-blue-500" id="stat-total-score">0</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-center">
+                    <div class="bg-green-100 dark:bg-green-900/50 p-3 rounded-xl">
+                        <div class="text-sm text-green-600 dark:text-green-400">ตอบถูกทั้งหมด</div>
+                        <div class="text-xl font-bold" id="stat-correct">0</div>
+                    </div>
+                    <div class="bg-red-100 dark:bg-red-900/50 p-3 rounded-xl">
+                        <div class="text-sm text-red-600 dark:text-red-400">ตอบผิดพลาด</div>
+                        <div class="text-xl font-bold" id="stat-wrong">0</div>
+                    </div>
+                </div>
+                <div class="mt-4 h-40 relative">
+                    <canvas id="statsChart"></canvas>
+                </div>
+            </div>
+            <button onclick="certSystem.openNameModal()" class="btn bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white px-8 py-3.5 rounded-full font-bold shadow-soft w-full max-w-xs mb-3 flex items-center justify-center gap-2 text-lg">
+                <i class="fas fa-graduation-cap text-xl"></i> สลักเกียรติบัตรนักคอมพิวเตอร์จิ๋ว 🎓
+            </button>
+            <button onclick="ui.showScreen('screen-home')" class="btn bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-full font-bold shadow-soft w-full max-w-xs"><i class="fas fa-home"></i> กลับหน้าหลัก</button>
+        </div>
+
+        <!-- Custom Confirm Modal -->
+        <div id="confirm-modal" class="hidden fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+            <div class="glass-card p-6 rounded-3xl shadow-soft max-w-xs w-full text-center animate-pop">
+                <div class="text-5xl mb-3">🚪</div>
+                <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-2">ออกจากเกม?</h3>
+                <p class="text-gray-500 dark:text-gray-300 text-sm mb-6">ทักษะที่เก็บสะสมมาในรอบนี้ยังไม่ถูกบันทึกน้า อยู่เล่นสนุกด้วยกันอีกนิดนะเด็กๆ!</p>
+                <div class="flex gap-3">
+                    <button onclick="game.confirmQuit(true)" class="btn flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-2xl font-bold">ออกเลย</button>
+                    <button onclick="game.confirmQuit(false)" class="btn flex-1 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 py-2.5 rounded-2xl font-bold">เล่นต่อ</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Name Input for Certificate -->
+        <div id="cert-name-modal" class="hidden fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4">
+            <div class="glass-card p-6 rounded-3xl shadow-soft max-w-sm w-full text-center animate-pop">
+                <div class="text-5xl mb-3">🎉</div>
+                <h3 class="text-2xl font-black text-blue-600 dark:text-blue-300 mb-2">ใบประกาศคนเก่ง!</h3>
+                <p class="text-gray-500 dark:text-gray-300 text-sm mb-4">พิมพ์ชื่อ-นามสกุลจริง เพื่อลงทะเบียนสลักชื่อลงบนประกาศนียบัตรทองคำ</p>
+                <input type="text" id="cert-student-name" placeholder="เด็กหญิง/เด็กชาย สุดน่ารัก แสนเก่ง" class="w-full px-4 py-3 border-2 border-pink-300 rounded-2xl text-center font-semibold text-lg focus:outline-none focus:border-pink-500 dark:bg-slate-800 dark:text-white mb-6">
+                <div class="flex gap-3">
+                    <button onclick="certSystem.generate()" class="btn flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-2xl font-bold shadow-soft">สร้างเกียรติบัตร 📜</button>
+                    <button onclick="certSystem.closeNameModal()" class="btn flex-1 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 py-3 rounded-2xl font-bold">ยกเลิก</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View Certificate Modal -->
+        <div id="cert-view-modal" class="hidden fixed inset-0 bg-black/60 z-[120] flex flex-col items-center justify-center p-4 overflow-y-auto">
+            <div class="glass-card p-6 rounded-3xl shadow-soft max-w-2xl w-full text-center flex flex-col items-center relative animate-pop">
+                <button onclick="certSystem.closeViewModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl"><i class="fas fa-times"></i></button>
+                <h3 class="text-2xl font-black text-amber-500 mb-4"><i class="fas fa-graduation-cap text-yellow-500"></i> เกียรติบัตรคอมพิวเตอร์ยอดคนเก่ง</h3>
+                
+                <div class="w-full max-w-lg aspect-[1.414/1] bg-white rounded-xl shadow-inner border border-gray-200 overflow-hidden mb-6">
+                    <canvas id="cert-canvas" width="800" height="565" class="w-full h-auto block"></canvas>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3 w-full max-w-md">
+                    <button onclick="certSystem.download()" class="btn flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white py-3 rounded-2xl font-bold shadow-soft flex items-center justify-center gap-2">
+                        <i class="fas fa-download"></i> เซฟรูปลงเครื่อง 💾
+                    </button>
+                    <button onclick="certSystem.closeViewModal()" class="btn flex-1 bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-200 py-3 rounded-2xl font-bold">ปิดหน้าจอ</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast" class="fixed top-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-xl transition-all duration-300 opacity-0 pointer-events-none z-[150] flex items-center gap-2 whitespace-nowrap">
+            <i class="fas fa-info-circle"></i> <span id="toast-msg">Message</span>
+        </div>
+    </div>
+
+    <script>
+        // --- Keys Layout Data representing the official image_c9bada.jpg sheet ---
+        const kbLayout = [
+            // Row 1
+            [
+                { id: 'Esc', label: 'Esc', sub: '', zone: 'zone-ctrl', w: 1.2 },
+                { id: 'F1', label: 'F1', sub: '', zone: 'zone-fn' },
+                { id: 'F2', label: 'F2', sub: '', zone: 'zone-fn' },
+                { id: 'F3', label: 'F3', sub: '', zone: 'zone-fn' },
+                { id: 'F4', label: 'F4', sub: '', zone: 'zone-fn' },
+                { id: 'F5', label: 'F5', sub: '', zone: 'zone-fn' },
+                { id: 'F6', label: 'F6', sub: '', zone: 'zone-fn' },
+                { id: 'F7', label: 'F7', sub: '', zone: 'zone-fn' },
+                { id: 'F8', label: 'F8', sub: '', zone: 'zone-fn' },
+                { id: 'F9', label: 'F9', sub: '', zone: 'zone-fn' },
+                { id: 'F10', label: 'F10', sub: '', zone: 'zone-fn' },
+                { id: 'F11', label: 'F11', sub: '', zone: 'zone-fn' },
+                { id: 'F12', label: 'F12', sub: '', zone: 'zone-fn' },
+                { id: 'PrtSc', label: 'PrtSc', sub: '', zone: 'zone-nav' },
+                { id: 'Scroll', label: 'Scroll', sub: '', zone: 'zone-nav' },
+                { id: 'Pause', label: 'Pause', sub: '', zone: 'zone-nav' }
+            ],
+            // Row 2
+            [
+                { id: 'Backquote', label: '~', sub: '` / _', zone: 'zone-alpha' },
+                { id: '1', label: '1', sub: 'ก / !', zone: 'zone-alpha' },
+                { id: '2', label: '2', sub: 'ข / @', zone: 'zone-alpha' },
+                { id: '3', label: '3', sub: 'ค / #', zone: 'zone-alpha' },
+                { id: '4', label: '4', sub: 'ง / $', zone: 'zone-alpha' },
+                { id: '5', label: '5', sub: 'จ / %', zone: 'zone-alpha' },
+                { id: '6', label: '6', sub: 'ฉ / ^', zone: 'zone-alpha' },
+                { id: '7', label: '7', sub: 'ช / &', zone: 'zone-alpha' },
+                { id: '8', label: '8', sub: 'ซ / *', zone: 'zone-alpha' },
+                { id: '9', label: '9', sub: 'ณ / (', zone: 'zone-alpha' },
+                { id: '0', label: '0', sub: 'ญ / )', zone: 'zone-alpha' },
+                { id: 'Minus', label: '-', sub: 'ฐ / _', zone: 'zone-alpha' },
+                { id: 'Equal', label: '=', sub: 'ฬ / +', zone: 'zone-alpha' },
+                { id: 'Backspace', label: 'Backspace', sub: 'ลบย้อน', zone: 'zone-ctrl', w: 2.2 },
+                { id: 'Insert', label: 'Insert', sub: 'แทรก', zone: 'zone-nav' },
+                { id: 'Home', label: 'Home', sub: 'ต้นบรรทัด', zone: 'zone-nav' },
+                { id: 'PageUp', label: 'PgUp', sub: 'เลื่อนขึ้น', zone: 'zone-nav' }
+            ],
+            // Row 3
+            [
+                { id: 'Tab', label: 'Tab', sub: 'เว้นวรรค', zone: 'zone-ctrl', w: 1.6 },
+                { id: 'Q', label: 'Q', sub: 'ๆ / ๐', zone: 'zone-alpha' },
+                { id: 'W', label: 'W', sub: 'ไ / ๑', zone: 'zone-alpha' },
+                { id: 'E', label: 'E', sub: 'ำ / ๒', zone: 'zone-alpha' },
+                { id: 'R', label: 'R', sub: 'พ / ๓', zone: 'zone-alpha' },
+                { id: 'T', label: 'T', sub: 'ะ / ๔', zone: 'zone-alpha' },
+                { id: 'Y', label: 'Y', sub: 'ั / ๕', zone: 'zone-alpha' },
+                { id: 'U', label: 'U', sub: 'ี / ๖', zone: 'zone-alpha' },
+                { id: 'I', label: 'I', sub: 'ร / ๗', zone: 'zone-alpha' },
+                { id: 'O', label: 'O', sub: 'น / ๘', zone: 'zone-alpha' },
+                { id: 'P', label: 'P', sub: 'ย / ๙', zone: 'zone-alpha' },
+                { id: 'BracketLeft', label: '[', sub: 'บ / {', zone: 'zone-alpha' },
+                { id: 'BracketRight', label: ']', sub: 'ล / }', zone: 'zone-alpha' },
+                { id: 'Backslash', label: '\\', sub: 'ค / |', zone: 'zone-alpha', w: 1.6 },
+                { id: 'Delete', label: 'Delete', sub: 'ลบ', zone: 'zone-nav' },
+                { id: 'End', label: 'End', sub: 'ท้ายบรรทัด', zone: 'zone-nav' },
+                { id: 'PageDown', label: 'PageDown', sub: 'เลื่อนลง', zone: 'zone-nav' }
+            ],
+            // Row 4
+            [
+                { id: 'Caps', label: 'Caps Lock', sub: 'พิมพ์ใหญ่', zone: 'zone-ctrl', w: 1.8 },
+                { id: 'A', label: 'A', sub: 'ฟ / ฤ', zone: 'zone-alpha' },
+                { id: 'S', label: 'S', sub: 'ห / ฆ', zone: 'zone-alpha' },
+                { id: 'D', label: 'D', sub: 'ก / ฏ', zone: 'zone-alpha' },
+                { id: 'F', label: 'F', sub: 'ด / โ', zone: 'zone-alpha' },
+                { id: 'G', label: 'G', sub: 'เ / ฌ', zone: 'zone-alpha' },
+                { id: 'H', label: 'H', sub: '้ / ็', zone: 'zone-alpha' },
+                { id: 'J', label: 'J', sub: '่ / ๋', zone: 'zone-alpha' },
+                { id: 'K', label: 'K', sub: 'า / ษ', zone: 'zone-alpha' },
+                { id: 'L', label: 'L', sub: 'ส / ศ', zone: 'zone-alpha' },
+                { id: 'Semicolon', label: ';', sub: 'ว / ซ', zone: 'zone-alpha' },
+                { id: 'Quote', label: "'", sub: '"', target: "'", ans: "'" },
+                { id: 'Enter', label: 'Enter ↵', class: 'zone-ctrl', w: 1.8 }
+            ],
+            // Row 5
+            [
+                { id: 'ShiftL', label: 'Shift ⇧', class: 'zone-ctrl', w: 2.2 },
+                { id: 'Z', label: 'Z', sub: 'ผ / (', zone: 'zone-alpha' },
+                { id: 'X', label: 'X', sub: 'ป / )', zone: 'zone-alpha' },
+                { id: 'C', label: 'C', sub: 'แ / ฉ', zone: 'zone-alpha' },
+                { id: 'V', label: 'V', sub: 'อ / ฮ', zone: 'zone-alpha' },
+                { id: 'B', label: 'B', sub: 'ิ / ั', zone: 'zone-alpha' },
+                { id: 'N', label: 'N', sub: 'ื / ์', zone: 'zone-alpha' },
+                { id: 'M', label: 'M', sub: 'ท / ?', zone: 'zone-alpha' },
+                { id: 'Comma', label: ',', sub: 'ม / <', zone: 'zone-alpha' },
+                { id: 'Period', label: '.', sub: 'ใ / >', zone: 'zone-alpha' },
+                { id: 'Slash', label: '/', sub: 'ฝ / ?', zone: 'zone-alpha' },
+                { id: 'ShiftR', label: 'Shift ⇧', class: 'zone-ctrl', w: 2.2 },
+                { id: 'Up', label: '▲', class: 'zone-arrow' }
+            ],
+            // Row 6
+            [
+                { id: 'CtrlL', label: 'Ctrl', class: 'zone-ctrl', w: 1.4 },
+                { id: 'WinL', label: '❖', class: 'zone-ctrl', w: 1.2 },
+                { id: 'AltL', label: 'Alt', class: 'zone-ctrl', w: 1.2 },
+                { id: 'Space', label: 'Spacebar (เว้นวรรค)', class: 'zone-alpha', w: 6.2 },
+                { id: 'AltR', label: 'Alt', class: 'zone-ctrl', w: 1.2 },
+                { id: 'WinR', label: '❖', class: 'zone-ctrl', w: 1.2 },
+                { id: 'CtrlR', label: 'Ctrl', class: 'zone-ctrl', w: 1.4 },
+                { id: 'Left', label: '◀', class: 'zone-arrow' },
+                { id: 'Down', label: '▼', class: 'zone-arrow' },
+                { id: 'Right', label: '▶', class: 'zone-arrow' }
+            ]
+        ];
+
+        // --- System Setup ---
+        const system = {
+            isSoundOn: true, isDarkMode: false, audioCtx: null,
+            init() {
+                const savedTheme = localStorage.getItem('theme_kb_v2');
+                if (savedTheme === 'dark') this.toggleTheme(true);
+                const savedSound = localStorage.getItem('sound_kb_v2');
+                if (savedSound === 'off') this.toggleSound(true);
+                stats.load();
+                
+                kbRender.render();
+                window.addEventListener('resize', this.scaleKeyboard);
+                setTimeout(() => this.scaleKeyboard(), 150);
+
+                // Global Keydown Listener
+                document.addEventListener('keydown', (e) => {
+                    if (ui.currentScreen !== 'screen-game') return;
+                    e.preventDefault(); // Prevent page scrolling during game play
+                    
+                    let keyId = e.code;
+                    if (e.key.length === 1) keyId = e.key.toUpperCase();
+                    
+                    const keyMap = {
+                        'Enter': 'Enter', 'Space': 'Space', 'Backspace': 'Backspace',
+                        'ShiftLeft': 'ShiftL', 'ShiftRight': 'ShiftR',
+                        'ControlLeft': 'CtrlL', 'ControlRight': 'CtrlR',
+                        'AltLeft': 'AltL', 'AltRight': 'AltR',
+                        'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+                        'Escape': 'Esc', 'CapsLock': 'Caps', 'Tab': 'Tab'
+                    };
+                    
+                    if (keyMap[e.code]) keyId = keyMap[e.code];
+                    
+                    kbRender.triggerKeyPress(keyId);
+                    game.input(keyId);
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    document.querySelectorAll('.key.pressed').forEach(el => el.classList.remove('pressed'));
+                });
+            },
+            scaleKeyboard() {
+                const kb = document.getElementById('virtual-keyboard');
+                if (!kb) return;
+                const parentW = kb.parentElement.clientWidth;
+                if (parentW <= 0) return; // Prevent scaling when hidden/collapsed
+                const kbW = 950; 
+                if (parentW < kbW) {
+                    const scale = Math.max(0.2, (parentW - 16) / kbW); // Prevent negative or ultra-tiny scales
+                    kb.style.transform = `scale(${scale})`;
+                    kb.style.marginBottom = `-${(1 - scale) * kb.clientHeight}px`;
+                } else {
+                    kb.style.transform = 'scale(1)';
+                    kb.style.marginBottom = '0';
+                }
+            },
+            toggleTheme(forceDark = false) {
+                this.isDarkMode = forceDark ? true : !this.isDarkMode;
+                document.body.classList.toggle('dark', this.isDarkMode);
+                document.getElementById('icon-theme').className = this.isDarkMode ? 'fas fa-sun text-xl' : 'fas fa-moon text-xl';
+                localStorage.setItem('theme_kb_v2', this.isDarkMode ? 'dark' : 'light');
+            },
+            toggleSound(forceOff = false) {
+                this.isSoundOn = forceOff ? false : !this.isSoundOn;
+                document.getElementById('icon-sound').className = this.isSoundOn ? 'fas fa-volume-up text-xl' : 'fas fa-volume-mute text-xl';
+                localStorage.setItem('sound_kb_v2', this.isSoundOn ? 'on' : 'off');
+                if (this.isSoundOn && !this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            },
+            playSound(type) {
+                if (!this.isSoundOn) return;
+                if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = this.audioCtx.createOscillator(), gain = this.audioCtx.createGain();
+                osc.connect(gain); gain.connect(this.audioCtx.destination);
+                const now = this.audioCtx.currentTime;
+                
+                if (type === 'click') {
+                    osc.type = 'square'; osc.frequency.setValueAtTime(120, now); osc.frequency.exponentialRampToValueAtTime(30, now + 0.05);
+                    gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                    osc.start(now); osc.stop(now + 0.05);
+                } else if (type === 'correct') {
+                    osc.type = 'triangle'; osc.frequency.setValueAtTime(523, now); osc.frequency.setValueAtTime(659, now + 0.1); osc.frequency.setValueAtTime(784, now + 0.2);
+                    gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                    osc.start(now); osc.stop(now + 0.3);
+                } else if (type === 'wrong') {
+                    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, now); osc.frequency.exponentialRampToValueAtTime(80, now + 0.2);
+                    gain.gain.setValueAtTime(0.4, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now); osc.stop(now + 0.25);
+                }
+            },
+            showToast(msg, isError = false) {
+                const toast = document.getElementById('toast');
+                document.getElementById('toast-msg').innerText = msg;
+                toast.className = `fixed top-10 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl transition-all duration-300 z-[150] flex items-center gap-2 whitespace-nowrap ${isError ? 'bg-red-500' : 'bg-green-500'} text-white`;
+                toast.style.opacity = '1'; setTimeout(() => toast.style.opacity = '0', 2500);
+            }
+        };
+
+        // --- Keyboard Render Engine ---
+        const kbRender = {
+            render() {
+                const container = document.getElementById('virtual-keyboard');
+                container.innerHTML = '';
+                
+                kbLayout.forEach(row => {
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'kb-row';
+                    
+                    row.forEach(key => {
+                        const keyEl = document.createElement('div');
+                        const keyClass = key.class || key.zone || 'zone-alpha';
+                        
+                        keyEl.id = `vkey-${key.id || key.label}`;
+                        keyEl.className = `key ${keyClass}`;
+                        
+                        // Custom width for modifier keys
+                        if (key.w) {
+                            keyEl.style.flexGrow = key.w;
+                            keyEl.style.width = `${key.w * 40}px`;
+                        } else {
+                            keyEl.style.flexGrow = '1';
+                        }
+                        
+                        // Structure key with label & sub-label (Thai-English layered as shown in the sheet)
+                        const labelText = key.label || '';
+                        const subText = key.sub || '';
+                        
+                        keyEl.innerHTML = `
+                            <div class="text-[12px] font-extrabold font-mono pointer-events-none">${labelText}</div>
+                            <div class="text-[8px] font-sans opacity-85 mt-0.5 pointer-events-none text-center px-0.5 leading-tight">${subText}</div>
+                        `;
+                        
+                        keyEl.onclick = () => {
+                            const val = key.id || key.label;
+                            this.triggerKeyPress(val);
+                            game.input(val);
+                        };
+                        
+                        rowEl.appendChild(keyEl);
+                    });
+                    
+                    container.appendChild(rowEl);
+                });
+            },
+            triggerKeyPress(id) {
+                const keyEl = document.getElementById(`vkey-${id}`);
+                if (keyEl) {
+                    keyEl.classList.add('pressed');
+                    system.playSound('click');
+                    setTimeout(() => keyEl.classList.remove('pressed'), 120);
+                }
+            }
+        };
+
+        // --- Game System Logic ---
+        const game = {
+            mode: '', score: 0, lives: 3, turn: 1, maxTurns: 10,
+            currentTargetKey: null, timer: null, timeLeft: 10, maxTime: 10,
+            isAnimating: false,
+            zonesData: {
+                'zone-alpha': { name: 'แป้นตัวอักษร (สีชมพู)', desc: 'ใช้สำหรับพิมพ์ข้อความภาษาไทย ภาษาอังกฤษ และอักขระสัญลักษณ์ต่างๆ' },
+                'zone-ctrl': { name: 'แป้นควบคุม (สีเขียว)', desc: 'ปุ่มใช้สำหรับควบคุมการทำงานหรือใช้ร่วมกับคีย์อื่น เช่น Shift, Ctrl, Alt, Caps Lock' },
+                'zone-fn': { name: 'แป้นฟังก์ชัน (สีเหลือง)', desc: 'ปุ่มคีย์ลัดสำหรับส่งคำสั่งพิเศษให้กับแต่ละโปรแกรม มีปุ่มตั้งแต่ F1 ถึง F12' },
+                'zone-nav': { name: 'แป้นควบคุมการทำงาน (สีฟ้า)', desc: 'ใช้สำหรับควบคุมจัดการเอกสาร เช่น Insert, Delete, Home, End, Page Up/Down' },
+                'zone-num': { name: 'แป้นพิมพ์ตัวเลข (สีส้ม)', desc: 'ใช้สำหรับเคาะป้อนตัวเลขรวมถึงเครื่องหมายในการคำนวณทางคณิตศาสตร์อย่างสะดวกรวดเร็ว' },
+                'zone-arrow': { name: 'แป้นลูกศร (สีน้ำเงิน)', desc: 'ใช้สำหรับเลื่อนตำแหน่งเคอร์เซอร์บนหน้าจอเอกสารไปตามทิศทาง ซ้าย-ขวา-บน-ล่าง' }
+            },
+
+            start(selectedMode) {
+                this.mode = selectedMode;
+                this.score = 0; this.lives = 3; this.turn = 1;
+                this.isAnimating = false;
+                
+                document.getElementById('ar-container').classList.add('hidden');
+                document.getElementById('ar-cursor').style.display = 'none';
+                document.getElementById('question-card-container').classList.add('hidden');
+                document.getElementById('timer-bar-container').classList.add('hidden');
+                
+                // Clear any leftover target glows
+                document.querySelectorAll('.key.target-active').forEach(el => el.classList.remove('target-active'));
+
+                let modeLabel = '';
+                if (this.mode === 'explore') {
+                    modeLabel = 'โหมดเรียนรู้สำรวจ';
+                    document.getElementById('ui-mission-text').innerText = 'สำรวจตำแหน่งปุ่มและเรียนรู้หน้าที่!';
+                    document.getElementById('info-text').innerText = '💡 ลองกดแป้นใดก็ได้บนแป้นพิมพ์เพื่อศึกษาคุณสมบัติและโซนการพิมพ์ทั้ง 6 โซน';
+                    this.initExploreMode();
+                } else if (this.mode === 'find_key') {
+                    modeLabel = 'โหมดตามหาแป้น';
+                    this.nextMission();
+                } else if (this.mode === 'typing') {
+                    modeLabel = 'โหมดนักพิมพ์จิ๋ว';
+                    this.nextMission();
+                } else if (this.mode === 'ar_hands') {
+                    modeLabel = 'โหมด AR แป้นพิมพ์';
+                    arSystem.init();
+                    this.nextMission();
+                }
+
+                document.getElementById('game-mode-label').innerText = modeLabel;
+                ui.updateStats();
+                ui.showScreen('screen-game');
+            },
+            initExploreMode() {
+                const qCard = document.getElementById('question-card-container');
+                qCard.classList.remove('hidden');
+
+                document.getElementById('q-zone-title').innerText = "ศูนย์ฝึกการสำรวจปุ่มคีย์บอร์ด ป.4";
+                document.getElementById('card-inner-content').innerHTML = `
+                    <div class="py-4 px-2">
+                        <div class="text-4xl mb-3">🔍🎓</div>
+                        <h4 class="text-lg font-extrabold text-indigo-600 mb-2">เริ่มทำการสำรวจแสนสนุก!</h4>
+                        <p class="text-sm text-gray-500 font-bold">ลองกดแป้นคีย์บอร์ดปุ่มใดก็ได้บนหน้าจอหรือแป้นพิมพ์จริง <br> เพื่อเปิดหน้าต่าง "คำถาม-คำตอบ" เรียนรู้หน้าที่ของปุ่มนั้น!</p>
+                    </div>
+                `;
+                qCard.firstElementChild.style.borderColor = '#93c5fd';
+            },
+            nextMission() {
+                if (this.turn > this.maxTurns) {
+                    this.finishGame();
+                    return;
+                }
+                
+                // Reset visual highlight
+                document.querySelectorAll('.key.target-active').forEach(el => el.classList.remove('target-active'));
+                
+                // Pick a target key from layout
+                const allKeys = [];
+                kbLayout.forEach(row => row.forEach(k => allKeys.push(k)));
+                
+                // Filter helper keys based on mode
+                let filteredKeys = allKeys;
+                if (this.mode === 'typing' || this.mode === 'ar_hands') {
+                    // Only letters or numbers
+                    filteredKeys = allKeys.filter(k => (k.zone === 'zone-alpha' || k.class === 'zone-alpha') && k.id !== 'Space');
+                }
+                
+                const randomKey = filteredKeys[Math.floor(Math.random() * filteredKeys.length)];
+                this.currentTargetKey = randomKey;
+
+                // Extract Thai and English labels for clear presentation
+                const engLabel = randomKey.label || '';
+                const thaiLabel = randomKey.sub ? randomKey.sub.split('/')[0].trim() : '-';
+                const zoneClass = randomKey.class || randomKey.zone || 'zone-alpha';
+                const zoneInfo = this.zonesData[zoneClass];
+
+                // Render the big magnificent question card (ความแจ่มชัดสูงมาก)
+                const qCard = document.getElementById('question-card-container');
+                qCard.classList.remove('hidden');
+
+                document.getElementById('q-zone-title').innerText = zoneInfo.name;
+                
+                // Set Question Content Layout for missions
+                document.getElementById('card-inner-content').innerHTML = `
+                    <div class="flex items-center justify-center gap-6 my-3">
+                        <div class="flex flex-col items-center bg-slate-100 dark:bg-slate-700 px-6 py-2 rounded-2xl shadow-inner min-w-[100px]">
+                            <span class="text-xs text-gray-400 font-bold">อังกฤษ</span>
+                            <span class="text-4xl md:text-5xl font-black font-mono text-indigo-600 dark:text-indigo-400">${engLabel}</span>
+                        </div>
+                        <div class="text-xl text-pink-400 font-black">➔</div>
+                        <div class="flex flex-col items-center bg-slate-100 dark:bg-slate-700 px-6 py-2 rounded-2xl shadow-inner min-w-[100px]">
+                            <span class="text-xs text-gray-400 font-bold">ภาษาไทย</span>
+                            <span class="text-4xl md:text-5xl font-black text-pink-500 dark:text-pink-300">${thaiLabel}</span>
+                        </div>
+                    </div>
+                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mt-1" id="q-action-hint">⚡ เตรียมตอบคำถามด่วน!</div>
+                `;
+
+                // Apply dynamic border style based on zone
+                qCard.firstElementChild.style.borderColor = 
+                    zoneClass === 'zone-alpha' ? '#f472b6' :
+                    zoneClass === 'zone-ctrl' ? '#4ade80' :
+                    zoneClass === 'zone-fn' ? '#facc15' :
+                    zoneClass === 'zone-nav' ? '#22d3ee' :
+                    zoneClass === 'zone-num' ? '#fb923c' : '#60a5fa';
+
+                if (this.mode === 'find_key') {
+                    document.getElementById('ui-mission-text').innerText = `ภารกิจข้อที่: ${this.turn}/${this.maxTurns}`;
+                    document.getElementById('q-action-hint').innerText = '🎯 มองหาปุ่มตามตำแหน่งบนบอร์ด แล้วกดได้เลย!';
+                    document.getElementById('timer-bar-container').classList.add('hidden');
+                    
+                    // Glow active target
+                    const targetEl = document.getElementById(`vkey-${randomKey.id || randomKey.label}`);
+                    if (targetEl) targetEl.classList.add('target-active');
+                } else {
+                    // Typing Mode & AR Mode
+                    document.getElementById('ui-mission-text').innerText = `พิมพ์ท้าทายข้อที่: ${this.turn}/${this.maxTurns}`;
+                    document.getElementById('q-action-hint').innerText = '⚡ พิมพ์ปุ่มนี้ลงบนคีย์บอร์ดจริง แข่งกับเวลาถอยหลังด่วน!';
+                    document.getElementById('timer-bar-container').classList.remove('hidden');
+                    
+                    this.timeLeft = 8;
+                    this.maxTime = 8;
+                    this.startCountdown();
+                }
+
+                ui.updateStats();
+            },
+            startCountdown() {
+                clearInterval(this.timer);
+                this.updateTimerBar();
+                this.timer = setInterval(() => {
+                    this.timeLeft--;
+                    this.updateTimerBar();
+                    
+                    if (this.timeLeft <= 0) {
+                        clearInterval(this.timer);
+                        this.lives--;
+                        stats.data.wrong++;
+                        ui.showFeedback(false);
+                        
+                        if (this.lives <= 0) {
+                            this.gameOver();
+                        } else {
+                            this.turn++;
+                            this.nextMission();
+                        }
+                    }
+                }, 1000);
+            },
+            updateTimerBar() {
+                const fill = document.getElementById('timer-progress-fill');
+                if (fill) {
+                    const percentage = (this.timeLeft / this.maxTime) * 100;
+                    fill.style.width = `${percentage}%`;
+                    
+                    // Change bar color as time runs out
+                    if (percentage > 50) {
+                        fill.className = "h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-300";
+                    } else if (percentage > 25) {
+                        fill.className = "h-full bg-gradient-to-r from-yellow-400 to-amber-500 transition-all duration-300";
+                    } else {
+                        fill.className = "h-full bg-gradient-to-r from-red-500 to-rose-500 transition-all duration-300";
+                    }
+                }
+                document.getElementById('ui-score-time').innerHTML = `<i class="fas fa-clock text-pink-500 animate-pulse"></i> เวลา: ${this.timeLeft} วิ`;
+            },
+            input(keyId) {
+                if (this.isAnimating) return;
+
+                if (this.mode === 'explore') {
+                    // Find key info
+                    let matchedKey = null;
+                    kbLayout.forEach(row => row.forEach(k => {
+                        if ((k.id || k.label) === keyId) matchedKey = k;
+                    }));
+                    
+                    if (matchedKey) {
+                        const zoneClass = matchedKey.class || matchedKey.zone || 'zone-alpha';
+                        const zoneInfo = this.zonesData[zoneClass];
+                        
+                        const engLabel = matchedKey.label || '';
+                        const thaiLabel = matchedKey.sub ? matchedKey.sub.split('/')[0].trim() : '-';
+                        const keyDisplayName = matchedKey.label + (matchedKey.sub ? ` (${matchedKey.sub})` : '');
+                        
+                        // Update explore info box bottom
+                        document.getElementById('info-box').className = `glass-card w-full p-2.5 mb-2 rounded-2xl text-center min-h-[50px] flex flex-col items-center justify-center transition-all duration-300 border-l-8 border-pink-400`;
+                        document.getElementById('info-text').innerHTML = `
+                            <div class="font-extrabold text-blue-600">กำลังศึกษาปุ่ม: ${keyDisplayName}</div>
+                            <div class="text-xs text-gray-500 font-bold mt-1">กลุ่มโครงสร้างแป้นพิมพ์ ➔ <b>${zoneInfo.name}</b></div>
+                        `;
+
+                        // NEW: Update center Question / Answer Card elegantly! (คำถาม/คำตอบ ชัดเจนแจ่มแจ้ง)
+                        const qCard = document.getElementById('question-card-container');
+                        qCard.firstElementChild.style.borderColor = 
+                            zoneClass === 'zone-alpha' ? '#f472b6' :
+                            zoneClass === 'zone-ctrl' ? '#4ade80' :
+                            zoneClass === 'zone-fn' ? '#facc15' :
+                            zoneClass === 'zone-nav' ? '#22d3ee' :
+                            zoneClass === 'zone-num' ? '#fb923c' : '#60a5fa';
+
+                        document.getElementById('q-zone-title').innerText = zoneInfo.name;
+                        document.getElementById('card-inner-content').innerHTML = `
+                            <div class="w-full text-left px-3 py-2 space-y-3">
+                                <div class="bg-indigo-50 dark:bg-indigo-950/40 p-2.5 rounded-2xl border-l-4 border-indigo-500">
+                                    <span class="text-xs font-black text-indigo-500 block">🔍 คำถามคอมพิวเตอร์น่ารู้:</span>
+                                    <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                                        ปุ่ม <span class="text-pink-600 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/40 px-2 py-0.5 rounded font-mono font-black">${engLabel}</span> (${thaiLabel}) ทำหน้าที่อะไรในคอมพิวเตอร์?
+                                    </span>
+                                </div>
+                                <div class="bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-2xl border-l-4 border-emerald-500 animate-pop">
+                                    <span class="text-xs font-black text-emerald-600 block">💡 คำตอบอัจฉริยะ:</span>
+                                    <span class="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                        ปุ่มนี้อยู่ในส่วนของ <span class="underline text-emerald-600 dark:text-emerald-400 font-extrabold">${zoneInfo.name}</span> ซึ่งมีหน้าที่หลักคือ: ${zoneInfo.desc}
+                                    </span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    return;
+                }
+
+                // Check for Mission mode answers
+                const expectedId = this.currentTargetKey.id || this.currentTargetKey.label;
+                
+                if (keyId === expectedId) {
+                    clearInterval(this.timer);
+                    this.isAnimating = true;
+                    stats.data.correct++;
+                    this.score += 10;
+                    ui.showFeedback(true);
+                    
+                    setTimeout(() => {
+                        this.isAnimating = false;
+                        this.turn++;
+                        this.nextMission();
+                    }, 800);
+                } else {
+                    // Wrong key pressed
+                    this.lives--;
+                    stats.data.wrong++;
+                    ui.showFeedback(false);
+                    ui.updateStats();
+                    
+                    if (this.lives <= 0) {
+                        clearInterval(this.timer);
+                        setTimeout(() => this.gameOver(), 600);
+                    }
+                }
+            },
+            gameOver() {
+                if (this.mode === 'ar_hands') arSystem.stop();
+                stats.data.totalScore += this.score;
+                stats.save();
+                document.getElementById('dash-title').innerText = '💔 ไม่เป็นไรน้า ฝึกพิมพ์บ่อยๆ เดี๋ยวเก่งแน่นอน!';
+                ui.showScreen('screen-dash');
+            },
+            finishGame() {
+                if (this.mode === 'ar_hands') arSystem.stop();
+                stats.data.totalScore += this.score;
+                stats.save();
+                document.getElementById('dash-title').innerText = '🎉 สุดยอดนักเรียนไอที! สำเร็จครบ 10 ด่านคีย์บอร์ดแล้ว';
+                ui.showScreen('screen-dash');
+            },
+            quit() {
+                document.getElementById('confirm-modal').classList.remove('hidden');
+            },
+            confirmQuit(isYes) {
+                document.getElementById('confirm-modal').classList.add('hidden');
+                if (isYes) {
+                    clearInterval(this.timer);
+                    if (this.mode === 'ar_hands') arSystem.stop();
+                    ui.showScreen('screen-home');
+                }
+            }
+        };
+
+        // --- UI Manager ---
+        const ui = {
+            currentScreen: 'screen-home',
+            showScreen(id) {
+                document.querySelectorAll('.app-container > div:not(#toast)').forEach(el => el.classList.add('hidden'));
+                document.getElementById(id).classList.remove('hidden');
+                document.getElementById(id).classList.add('animate-pop');
+                this.currentScreen = id;
+                if (id === 'screen-dash') stats.renderDash();
+                
+                // Recalculate scaling after screen is shown (so clientWidth is correctly resolved)
+                if (id === 'screen-game') {
+                    setTimeout(() => system.scaleKeyboard(), 100);
+                }
+            },
+            updateStats() {
+                document.getElementById('ui-lives').innerText = '❤️'.repeat(game.lives) + '🖤'.repeat(3 - game.lives);
+                if (game.mode !== 'typing' && game.mode !== 'ar_hands') {
+                    document.getElementById('ui-score-time').innerText = `คะแนน: ${game.score}`;
+                }
+            },
+            showFeedback(isCorrect) {
+                const overlay = document.getElementById('feedback-overlay');
+                const card = document.getElementById('virtual-keyboard').parentElement.parentElement;
+                
+                if (isCorrect) {
+                    system.playSound('correct');
+                    overlay.innerText = '✅';
+                    card.classList.add('border-4', 'border-green-400');
+                    overlay.style.opacity = '1';
+                    confetti.fire();
+                } else {
+                    system.playSound('wrong');
+                    overlay.innerText = '❌';
+                    card.classList.add('animate-shake', 'border-4', 'border-red-400');
+                    overlay.style.opacity = '1';
+                }
+                
+                setTimeout(() => {
+                    overlay.style.opacity = '0';
+                    card.classList.remove('animate-shake', 'border-4', 'border-red-400', 'border-green-400');
+                }, 500);
+            }
+        };
+
+        // --- LocalStorage Stats ---
+        const stats = {
+            data: { totalScore: 0, correct: 0, wrong: 0 },
+            chartInstance: null,
+            load() {
+                const saved = localStorage.getItem('keyboard_adventure_stats_v2');
+                if (saved) this.data = JSON.parse(saved);
+            },
+            save() {
+                localStorage.setItem('keyboard_adventure_stats_v2', JSON.stringify(this.data));
+            },
+            renderDash() {
+                document.getElementById('stat-total-score').innerText = this.data.totalScore;
+                document.getElementById('stat-correct').innerText = this.data.correct;
+                document.getElementById('stat-wrong').innerText = this.data.wrong;
+
+                const ctx = document.getElementById('statsChart').getContext('2d');
+                if (this.chartInstance) this.chartInstance.destroy();
+                if (this.data.correct === 0 && this.data.wrong === 0) return;
+
+                this.chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['ตอบถูกแป้น', 'พิมพ์คลาดเคลื่อน'],
+                        datasets: [{
+                            data: [this.data.correct, this.data.wrong],
+                            backgroundColor: ['#4ade80', '#f87171'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'right' } },
+                        cutout: '65%'
+                    }
+                });
+            }
+        };
+
+        // --- Certificate System ---
+        const certSystem = {
+            openNameModal() {
+                document.getElementById('cert-name-modal').classList.remove('hidden');
+            },
+            closeNameModal() {
+                document.getElementById('cert-name-modal').classList.add('hidden');
+            },
+            closeViewModal() {
+                document.getElementById('cert-view-modal').classList.add('hidden');
+            },
+            generate() {
+                const name = document.getElementById('cert-student-name').value.trim();
+                if (!name) {
+                    system.showToast('พิมพ์ชื่อตนเองเพื่อลงตราประกาศนียบัตรด้วยน้าา 👦🏻👧ิ', true);
+                    return;
+                }
+                this.closeNameModal();
+                document.getElementById('cert-view-modal').classList.remove('hidden');
+
+                const canvas = document.getElementById('cert-canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Canvas Certificate Painting
+                ctx.fillStyle = '#fefdfb';
+                ctx.fillRect(0, 0, 800, 565);
+
+                // Golden Frames
+                ctx.strokeStyle = '#fbcfe8'; 
+                ctx.lineWidth = 14;
+                ctx.strokeRect(10, 10, 780, 545);
+
+                ctx.strokeStyle = '#fed7aa'; 
+                ctx.lineWidth = 4;
+                ctx.strokeRect(26, 26, 748, 513);
+
+                ctx.textAlign = 'center';
+
+                // Headers
+                ctx.fillStyle = '#1e3a8a';
+                ctx.font = "bold 34px 'Kanit', sans-serif";
+                ctx.fillText("⭐ ใบรับรองทักษะนักคอมพิวเตอร์จิ๋ว ⭐", 400, 95);
+
+                ctx.fillStyle = '#4b5563';
+                ctx.font = "18px 'Kanit', sans-serif";
+                ctx.fillText("เกียรติบัตรฉบับนี้จัดตั้งให้ไว้เพื่อแสดงว่า", 400, 155);
+
+                // Name
+                ctx.fillStyle = '#db2777'; 
+                ctx.font = "bold 36px 'Kanit', sans-serif";
+                ctx.fillText(name, 400, 225);
+
+                // Line
+                ctx.strokeStyle = '#fed7aa';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(250, 245); ctx.lineTo(550, 245); ctx.stroke();
+
+                // Verification
+                ctx.fillStyle = '#374151';
+                ctx.font = "18px 'Kanit', sans-serif";
+                ctx.fillText("ได้ผ่านกิจกรรมทดสอบรู้จัก 6 โซนสีและพิมพ์สัมผัสแป้นพิมพ์ขั้นพื้นฐาน", 400, 295);
+
+                ctx.fillStyle = '#2563eb';
+                ctx.font = "bold 20px 'Kanit', sans-serif";
+                ctx.fillText("“เกมผจญภัยรู้จักแป้นพิมพ์ (Keyboard Adventure)”", 400, 340);
+
+                ctx.fillStyle = '#10b981';
+                ctx.font = "bold 20px 'Kanit', sans-serif";
+                ctx.fillText(`คะแนนรวมทักษะแป้นพิมพ์ที่บันทึกสำเร็จ: ${game.score} คะแนน`, 400, 390);
+
+                // Date
+                const d = new Date();
+                const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+                ctx.fillStyle = '#6b7280';
+                ctx.font = "15px 'Kanit', sans-serif";
+                ctx.fillText(`บันทึก ณ วันที่ ${d.getDate()} ${months[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`, 400, 440);
+
+                // Stamp
+                ctx.fillStyle = '#fbbf24';
+                ctx.beginPath(); ctx.arc(680, 470, 30, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = "bold 24px 'Kanit', sans-serif";
+                ctx.fillText("💻", 680, 478);
+
+                // Sign
+                ctx.strokeStyle = '#d1d5db';
+                ctx.beginPath(); ctx.moveTo(80, 480); ctx.lineTo(240, 480); ctx.stroke();
+                ctx.fillStyle = '#374151';
+                ctx.font = "bold 15px 'Kanit', sans-serif";
+                ctx.fillText("คุณครูเทคโนโลยีไอทีจิ๋ว", 160, 505);
+            },
+            download() {
+                const canvas = document.getElementById('cert-canvas');
+                try {
+                    const link = document.createElement('a');
+                    link.download = 'เกียรติบัตร_รู้จักแป้นพิมพ์_ป4.png';
+                    link.href = canvas.toDataURL('image/png');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    system.showToast('บันทึกรูปภาพใบเกียรติบัตรลงอัลบั้มสำเร็จจ้า! 🎉');
+                } catch(e) {
+                    system.showToast('การเซฟล้มเหลว เด็กๆ สามารถแคปเจอร์หน้าจอรูปเก็บไว้อวดผู้ปกครองได้น้า 📱', true);
+                }
+            }
+        };
+
+        // --- AR Camera Control using MediaPipe Hands ---
+        const arSystem = {
+            video: null, hands: null, camera: null, isRunning: false, isPinched: false,
+            init() {
+                const container = document.getElementById('ar-container');
+                const status = document.getElementById('ar-status');
+                const cursor = document.getElementById('ar-cursor');
+                this.video = document.getElementById('ar-video');
+
+                container.classList.remove('hidden');
+                cursor.style.display = 'block';
+                status.classList.remove('hidden');
+
+                if (!this.hands) {
+                    this.hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+                    this.hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                    this.hands.onResults(this.onResults.bind(this));
+                }
+
+                if (!this.camera) {
+                    this.camera = new Camera(this.video, { onFrame: async () => { if(this.isRunning) await this.hands.send({image: this.video}); }, width: 320, height: 240 });
+                }
+
+                this.camera.start().then(() => { this.isRunning = true; status.classList.add('hidden'); })
+                .catch(() => {
+                    system.showToast('ไม่สามารถจำลองเชื่อมต่อกล้องได้ ย้ายกลับสู่โหมดธรรมดานะจ๊ะ', true);
+                    container.classList.add('hidden'); cursor.style.display = 'none';
+                    game.start('explore');
+                });
+            },
+            stop() {
+                this.isRunning = false;
+                if (this.camera) this.camera.stop();
+                document.getElementById('ar-container').classList.add('hidden');
+                document.getElementById('ar-cursor').style.display = 'none';
+            },
+            onResults(results) {
+                const cursor = document.getElementById('ar-cursor');
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    const x = (1 - lm[8].x) * window.innerWidth;
+                    const y = lm[8].y * window.innerHeight;
+                    cursor.style.left = `${x}px`; cursor.style.top = `${y}px`;
+
+                    const dist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+                    if (dist < 0.05 && !this.isPinched) {
+                        this.isPinched = true; cursor.classList.add('pinched');
+                        const el = document.elementFromPoint(x, y);
+                        if (el && el.classList.contains('key')) {
+                            el.click();
+                        }
+                    } else if (dist >= 0.05) { this.isPinched = false; cursor.classList.remove('pinched'); }
+                }
+            }
+        };
+
+        // --- Confetti Explosion FX ---
+        const confetti = {
+            particles: [], canvas: null, ctx: null, active: false,
+            init() {
+                this.canvas = document.getElementById('confetti-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resize(); window.addEventListener('resize', () => this.resize());
+            },
+            resize() { this.canvas.width = window.innerWidth; this.canvas.height = window.innerHeight; },
+            fire() {
+                this.particles = []; const colors = ['#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa'];
+                for (let i = 0; i < 60; i++) {
+                    this.particles.push({
+                        x: this.canvas.width / 2, y: this.canvas.height / 2, r: Math.random() * 6 + 4,
+                        dx: Math.random() * 12 - 6, dy: Math.random() * -10 - 5,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        tilt: Math.floor(Math.random() * 10) - 10, tiltAngle: 0, tiltAngleInc: (Math.random() * 0.07) + 0.05
+                    });
+                }
+                if (!this.active) { this.active = true; requestAnimationFrame(() => this.draw()); }
+            },
+            draw() {
+                if (this.particles.length === 0) { this.active = false; this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height); return; }
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                for (let i = 0; i < this.particles.length; i++) {
+                    let p = this.particles[i];
+                    p.tiltAngle += p.tiltAngleInc; p.y += (Math.cos(p.tiltAngle) + 1 + p.r / 2) / 2;
+                    p.x += Math.sin(p.tiltAngle) * 2; p.dy += 0.2; p.x += p.dx; p.y += p.dy;
+                    this.ctx.beginPath(); this.ctx.lineWidth = p.r; this.ctx.strokeStyle = p.color;
+                    this.ctx.moveTo(p.x + p.tilt + p.r, p.y); this.ctx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r); this.ctx.stroke();
+                    if (p.y > this.canvas.height) { this.particles.splice(i, 1); i--; }
+                }
+                requestAnimationFrame(() => this.draw());
+            }
+        };
+
+        window.onload = () => { system.init(); confetti.init(); };
+    </script>
+</body>
+</html>
